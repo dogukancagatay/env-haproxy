@@ -1,0 +1,52 @@
+global
+        log 127.0.0.1 local1
+        maxconn 50000
+
+defaults
+        log global
+        mode tcp
+        option tcplog
+        retries 3
+	balance {{ env("BALANCE_ALGORITHM", "roundrobin") }}
+        option redispatch
+        option log-health-checks
+        timeout connect 3s
+        timeout client 6s
+        timeout server 6s
+
+listen stats
+	bind *:8404
+	mode http
+	option http-use-htx
+	http-request use-service prometheus-exporter if { path /metrics }
+	stats enable
+	stats uri /stats
+	stats refresh 10s
+
+{% if env("LB_TYPE") == "TCP" %}
+listen server-tcp
+        bind *:{{ env("BIND_PORT") }}
+        mode tcp
+	option tcplog
+        option tcp-check
+        option clitcpka
+        {% for n in range(1, (env("NUM_SERVERS", "100") | int) + 1) -%}
+        {%- if env("LB_SERVER_" + (n | string), "EMPTY") != "EMPTY" %}
+        server server{{ n }} {{ env("LB_SERVER_" + (n | string)) }} check inter 5s
+        {%- endif -%}
+        {%- endfor %}
+{% endif %}
+
+{% if env("LB_TYPE") == "HTTP" %}
+listen server-http
+        bind *:{{ env("BIND_PORT") }}
+        mode http
+        option httplog
+        option httpchk
+        {% for n in range(1, (env("NUM_SERVERS", "100") | int) + 1) -%}
+        {%- if env("LB_SERVER_" + (n | string), "EMPTY") != "EMPTY" %}
+        server server{{ n }} {{ env("LB_SERVER_" + (n | string)) }} check inter 5s
+        {%- endif -%}
+        {%- endfor %}
+{% endif %}
+
